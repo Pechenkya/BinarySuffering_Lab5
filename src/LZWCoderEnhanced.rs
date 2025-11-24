@@ -338,4 +338,9 @@ pub fn decode_file(input_path: &str, output_path: &str) {
             writer.write(&detransformed).unwrap();
         }
     }
+
+    // Flush remaining transformation
+    if transormation_slice.len() > 0 {
+        writer.write(&perform_inverse_MTF_BWT(transormation_slice)).unwrap();
+    }
 }
