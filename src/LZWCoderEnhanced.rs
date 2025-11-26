@@ -89,7 +89,7 @@ pub fn encode(input: &[u8], clear_dict_on_overfill: bool) -> Vec<u8> {
     let mut I: Option<u16> = None;
 
     for slice in input.chunks(BWT_BLOCK_SIZE) {
-        for &byte in perform_BWT_MTF(slice.to_vec()).iter() {
+        for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
             if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
                 I = Some(idx);
             } else {
@@ -188,7 +188,7 @@ pub fn decode(input: &[u8]) -> Vec<u8> {
     }
 
     // Detransform BWT+MTF
-    output = output.chunks(BWT_RESULT_SIZE).map(|chunk| perform_inverse_MTF_BWT(chunk.to_vec())).flatten().collect();
+    output = output.chunks(BWT_RESULT_SIZE).map(|chunk| perform_inverse_MTF_BWT(&chunk.to_vec())).flatten().collect();
 
     return output;
 }
@@ -229,7 +229,7 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
 
         slice.truncate(_bytes_read);
 
-        for &byte in perform_BWT_MTF(slice.to_vec()).iter() {
+        for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
             if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
                 I = Some(idx);
             } else {
@@ -333,7 +333,7 @@ pub fn decode_file(input_path: &str, output_path: &str) {
 
         // Flush transformation slice if it reached BWT_RESULT_SIZE
         while transormation_slice.len() >= BWT_RESULT_SIZE {
-            let to_process = transormation_slice.drain(0..BWT_RESULT_SIZE).collect();
+            let to_process = &transormation_slice.drain(0..BWT_RESULT_SIZE).collect();
             let detransformed = perform_inverse_MTF_BWT(to_process);
             writer.write(&detransformed).unwrap();
         }
@@ -341,6 +341,6 @@ pub fn decode_file(input_path: &str, output_path: &str) {
 
     // Flush remaining transformation
     if transormation_slice.len() > 0 {
-        writer.write(&perform_inverse_MTF_BWT(transormation_slice)).unwrap();
+        writer.write(&perform_inverse_MTF_BWT(&transormation_slice)).unwrap();
     }
 }

@@ -1,5 +1,6 @@
 use crate::BitStream::BitStream;
 use crate::TransformationMethods::*;
+use std::fs::remove_file;
 
 struct Node {
     weight: u32,
@@ -54,7 +55,6 @@ impl HuffmanEncoder {
 
         // Build Huffman tree
         queue.sort_by_key(|node| node.weight);
-        println!("Initial queue: {:?}", queue.iter().map(|n| (n.byte_value, n.weight)).collect::<Vec<_>>());
         while queue.len() > 1 {
             queue.sort_by_key(|node| node.weight);
             let left = queue.remove(0);
@@ -95,10 +95,15 @@ impl HuffmanEncoder {
     }
 
     pub fn encode(input: &str, output: &str) {
+        let file_to_endcode = &format!("{}.tmp", input); 
+        transform_file(input, file_to_endcode);
+
+        // let file_to_endcode = input;
+
         let mut internal_encoder = HuffmanEncoder {
             freq_t: [0; 256],
             root: None,
-            input_stream: BitStream::new(input, true),
+            input_stream: BitStream::new(file_to_endcode, true),
             output_stream: BitStream::new(output, false),
             codes: [([0; 32], 0); 256],
         };
@@ -108,22 +113,6 @@ impl HuffmanEncoder {
         internal_encoder.calc_frequences();
         internal_encoder.build_tree_and_get_codes();
         
-        {
-            // Debug
-            let mut deb_print = internal_encoder.codes.iter_mut().enumerate().filter(|(_, (code, length))| *length > 0)
-                                                             .map(|(idx, (code, length))| {
-                                                                 let code = &code[0..((*length as usize + 7) / 8)];
-                                                                 (idx, length, format!("{:?}", code.to_vec()))
-                                                             }).collect::<Vec<_>>();
-
-            deb_print.sort_by_key(|(_, &mut l, _)| l);
-
-            println!("Codes ({}): {:?}", deb_print.len(), deb_print);
-            println!("Code for i: {:b}", internal_encoder.codes[b'i' as usize].0[0]);
-            println!("Code for L: {:b}", internal_encoder.codes[b'L' as usize].0[0]);
-            println!("Code for Space: {:b}", internal_encoder.codes[b' ' as usize].0[0]);
-        }
-
         // Write frequency table to output
         for (i, freq) in internal_encoder.freq_t.iter().enumerate() {
             internal_encoder.output_stream.write_bit_sequence(&u32::to_le_bytes(*freq), 32).unwrap();
@@ -142,6 +131,8 @@ impl HuffmanEncoder {
         }
 
         internal_encoder.output_stream.flush().unwrap();
+
+        remove_file(file_to_endcode).unwrap();
     }
 }
 
@@ -201,11 +192,14 @@ impl HuffmanDecoder {
     }
 
     pub fn decode(input: &str, output: &str) {
+        let transformed_output = &format!("{}.tmp", output);
+        // let transformed_output = output;
+
         let mut internal_decoder = HuffmanDecoder {
             freq_t: [0; 256],
             root: None,
             input_stream: BitStream::new(input, true),
-            output_stream: BitStream::new(output, false),
+            output_stream: BitStream::new(transformed_output, false),
             codes: [([0; 32], 0); 256],
         };
 
@@ -218,19 +212,6 @@ impl HuffmanDecoder {
         }
         
         internal_decoder.build_tree_and_get_codes();
-        
-        {
-            // Debug
-            let deb_print = internal_decoder.codes.iter_mut().enumerate().filter(|(_, (code, length))| *length > 0)
-                                                             .map(|(idx, (code, length))| {
-                                                                 let code = &code[0..((*length as usize + 7) / 8)];
-                                                                 (idx, length, format!("{:?}", code.to_vec()))
-                                                             }).collect::<Vec<_>>();
-
-            println!("Code for i: {:b}", internal_decoder.codes[b'i' as usize].0[0]);
-            println!("Code for L: {:b}", internal_decoder.codes[b'L' as usize].0[0]);
-            println!("Code for Space: {:b}", internal_decoder.codes[b' ' as usize].0[0]);
-        }
 
         // Decode all bytes
         let mut symbols_left: u32 = internal_decoder.freq_t.iter().sum();
@@ -256,5 +237,8 @@ impl HuffmanDecoder {
         }
 
         internal_decoder.output_stream.flush().unwrap();
+
+        inverse_transform_file(transformed_output, output);
+        remove_file(transformed_output).unwrap();
     }
 }
