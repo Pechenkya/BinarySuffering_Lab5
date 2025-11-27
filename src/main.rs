@@ -4,7 +4,7 @@ mod BitStream;
 mod LZWCoderEnhanced;
 mod Huffman;
 
-use std::time::{Instant, Duration};
+use std::{fs, result, time::{Duration, Instant}};
 use crate::TransformationMethods::{BWT, inverse_transform_file, transform_file};
 
 fn encode_file_with_timer(input_path: String, output_path: String, encoding_type: String, use_transform: bool) {
@@ -67,41 +67,80 @@ fn decode_file_with_timer(input_path: String, output_path: String, encoding_type
     println!("\rDecoding time: {:?}", decode_duration);
 }
 
+fn generate_args_and_paths(filenames: &Vec<&str>, base_input: &str, base_output_encoded: &str, base_output_decoded: &str, encoding_type: &str) 
+    -> Vec<(String, String, String, String, bool)> {
+    
+    let mut results = Vec::new();
+
+    for filename in filenames {
+        let no_suff = filename.split('.').next().unwrap();
+        let f_type = filename.split('.').last().unwrap();
+
+        fs::create_dir_all(&format!("{base_output_encoded}/{no_suff}")).unwrap();
+        fs::create_dir_all(&format!("{base_output_decoded}/{no_suff}")).unwrap();
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.huff");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_huff.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), false));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.hufft");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_hufft.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), true));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzw");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzw.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), false));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzwt");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzwt.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), true));
+    }
+
+    return results;
+}
+
 fn main() {
-    // encode_file("test_data/4.txt", "test_data/4.txt.lzwe", true);
-    // decode_file("test_data/4.txt.lzwe", "test_data/decoded_4.txt");
+    let filenames = vec![
+        // "file_1.txt",
+        "file_2.txt",
+        "file_3.pdf",
+        "file_4.pdf",
+        "file_5.msi",
+        "file_6.jpg",
+        "file_7.exe",
+        "file_8.bin",
+        "file_9.csv",
+    ];
 
-    // Huffman::HuffmanEncoder::encode("test_data/test_pdf_2.pdf", "test_data/test_pdf_2_1.pdf.huff");
-    // Huffman::HuffmanDecoder::decode("test_data/test_pdf_2_1.pdf.huff", "test_data/decoded_pdf_2_1.pdf");
-
-    // transform_file("test_data/test_pdf.pdf", "test_data/test_pdf.pdf.transformed");
-    // inverse_transform_file("test_data/test_pdf.pdf.transformed", "test_data/inversed.pdf");
-
-    encode_file_with_timer(
-        "test_data/input/file_3.pdf".to_string(),
-        "test_data/output/encoded/file_3.pdf.huff".to_string(),
-        "Huffman".to_string(),
-        true,
+    let args = generate_args_and_paths(
+        &filenames,
+        "test_data/input",
+        "test_data/output/encoded",
+        "test_data/output/decoded",
+        "",
     );
 
-    decode_file_with_timer(
-        "test_data/output/encoded/file_3.pdf.huff".to_string(),
-        "test_data/output/decoded/file_3_huff.pdf".to_string(),
-        "Huffman".to_string(),
-        true,
-    );
+    for (input_path, output_path_encoded, output_path_decoded, encoding_type, use_transform) in args {
+        encode_file_with_timer(
+            input_path.clone(),
+            output_path_encoded.clone(),
+            encoding_type.clone(),
+            use_transform,
+        );
 
-    encode_file_with_timer(
-        "test_data/input/file_3.pdf".to_string(),
-        "test_data/output/encoded/file_3.pdf.lzwe".to_string(),
-        "LZW".to_string(),
-        true,
-    );
-
-    decode_file_with_timer(
-        "test_data/output/encoded/file_3.pdf.lzwe".to_string(),
-        "test_data/output/decoded/file_3_lzwe.pdf".to_string(),
-        "LZW".to_string(),
-        true,
-    );
+        decode_file_with_timer(
+            output_path_encoded.clone(),
+            output_path_decoded.clone(),
+            encoding_type.clone(),
+            use_transform,
+        );
+    }
 }

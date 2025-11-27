@@ -247,9 +247,8 @@ impl HuffmanDecoder {
 
         internal_decoder.output_stream.flush().unwrap();
 
-        inverse_transform_file(&decoded_output, output);
-
         if use_transform {
+            inverse_transform_file(&decoded_output, output);
             remove_file(decoded_output).unwrap();
         }
     }

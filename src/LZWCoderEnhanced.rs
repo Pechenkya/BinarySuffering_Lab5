@@ -222,10 +222,13 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
             // Special case (only case when I is not in dict - covering sequences)
             // S = old_S || old_S[0]
             if let Some(old_S) = internal_decoder.recover_seq_from_dict(old_I) {
-                // writer.write(&old_S).unwrap();
-                // writer.write(&old_S[0..1]).unwrap();
-                _output_buffer.extend_from_slice(&old_S);
-                _output_buffer.push(old_S[0]);
+                if use_transform {
+                    _output_buffer.extend_from_slice(&old_S);
+                    _output_buffer.push(old_S[0]);
+                } else {
+                    writer.write(&old_S).unwrap();
+                    writer.write(&old_S[0..1]).unwrap();
+                }
 
                 // Add this sequence to the dict
                 internal_decoder.add_seq_to_dict((old_S[0], Some(old_I)));
