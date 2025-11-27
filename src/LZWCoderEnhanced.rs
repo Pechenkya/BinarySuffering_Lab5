@@ -69,131 +69,7 @@ impl LZWCoderEnhanced {
     }
 }
 
-pub fn encode(input: &[u8], clear_dict_on_overfill: bool) -> Vec<u8> {
-    let mut output: Vec<u8> = Vec::new();
-
-    // Create encoder and initialize dictionary
-    let mut internal_encoder = LZWCoderEnhanced {
-        dict: Vec::new(),
-        reverse_dict_map: HashMap::new(),
-        max_dict_size: MAX_DICT_SIZE,
-        clear_dict_on_overfill
-    };
-
-    // Store parameters for decoder into first three bytes
-    output.push(if clear_dict_on_overfill { 1 } else { 0 });
-    output.extend_from_slice(&(internal_encoder.max_dict_size as u16).to_le_bytes());
-
-    internal_encoder.set_init_dict();
-
-    let mut I: Option<u16> = None;
-
-    for slice in input.chunks(BWT_BLOCK_SIZE) {
-        for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
-            if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
-                I = Some(idx);
-            } else {
-                output.extend_from_slice(&I.unwrap().to_le_bytes());
-
-                let pair_added = internal_encoder.add_seq_to_dict((byte, I));
-
-                if !pair_added && internal_encoder.clear_dict_on_overfill {
-                    internal_encoder.set_init_dict();
-                    output.extend_from_slice(&CLEAR_SYMBOL.to_le_bytes());
-                }
-
-                I = Some(byte as u16);  // I -> idx of byte (bytes are filled sequentially)
-            }
-        }
-    }
-
-    output.extend_from_slice(&I.unwrap().to_le_bytes());
-
-    return output;
-}
-
-pub fn decode(input: &[u8]) -> Vec<u8> {
-    let mut output: Vec<u8> = Vec::new();
-
-    // Read first three bytes to restore parameters of encoder
-    let clear_dict_on_overfill = input[0] != 0;
-    let last_dict_index = u16::from_le_bytes(input[1..3].try_into().unwrap());
-
-    // Create decoder and initialize dictionary
-    let mut internal_decoder = LZWCoderEnhanced {
-        dict: Vec::new(),
-        reverse_dict_map: HashMap::new(),
-        max_dict_size: last_dict_index as usize + 1,    // We store only two bytes to ensure the limitation of max 16 bits for code
-        clear_dict_on_overfill
-    };
-    internal_decoder.set_init_dict();
-
-    // Read first idx
-    let I = u16::from_le_bytes(input[3..5].try_into().unwrap());
-
-    // First byte should be always in the dict
-    if let Some((fb, _)) = internal_decoder.dict.get(I as usize) {
-        output.push(*fb);   // Send it directly to output
-    } else {
-        panic!("Corrupted input data: first index not in dictionary");
-    }
-
-    let mut old_I: u16 = I;
-    let mut is_first = true;
-
-    for chunk in input[5..].chunks(2) {
-        // Read next idx
-        let I = u16::from_le_bytes(chunk.try_into().unwrap());
-
-        // First byte logic
-        if is_first {
-            is_first = false;
-            // First byte should be always in the dict
-            if let Some((fb, _)) = internal_decoder.dict.get(I as usize) {
-                output.push(*fb);   // Send it directly to output
-            } else {
-                panic!("Corrupted input data: first index not in dictionary");
-            }
-
-            old_I = I;
-            continue;
-        }
-
-        // Check clear symbol
-        if I == CLEAR_SYMBOL {
-            internal_decoder.set_init_dict();
-            is_first = true;
-            continue;
-        }
-
-        // Normal processing
-        if let Some(S) = internal_decoder.recover_seq_from_dict(I) {
-            output.extend_from_slice(&S);
-            internal_decoder.add_seq_to_dict((S[0], Some(old_I)));
-            old_I = I;
-        } else {
-            // Special case (only case when I is not in dict - covering sequences)
-            // S = old_S || old_S[0]
-            if let Some(old_S) = internal_decoder.recover_seq_from_dict(old_I) {
-                output.extend_from_slice(&old_S);
-                output.push(old_S[0]);
-
-                // Add this sequence to the dict
-                internal_decoder.add_seq_to_dict((old_S[0], Some(old_I)));
-
-                // Set I to newly added sequence
-                old_I = internal_decoder.get_last_dict_index();
-            }
-        }
-    }
-
-    // Detransform BWT+MTF
-    output = output.chunks(BWT_RESULT_SIZE).map(|chunk| perform_inverse_MTF_BWT(&chunk.to_vec())).flatten().collect();
-
-    return output;
-}
-
-pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: bool) {
+pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: bool, use_transform: bool) {
     let input_file = File::open(input_path).unwrap();
     let mut reader = BufReader::new(input_file);
 
@@ -219,17 +95,37 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
 
     let mut I: Option<u16> = None;
 
-    let mut slice: Vec<u8> = Vec::with_capacity(BWT_BLOCK_SIZE);
-    slice.resize(BWT_BLOCK_SIZE, 0);
+    if use_transform {
+        let mut slice: Vec<u8> = Vec::with_capacity(BWT_BLOCK_SIZE);
+        slice.resize(BWT_BLOCK_SIZE, 0);
+    
+        while let Ok(_bytes_read) = reader.read(&mut slice) {   // Buffered read for transformation
+            if _bytes_read == 0 {
+                break;  // EOF
+            }
 
-    while let Ok(_bytes_read) = reader.read(&mut slice) {   // Buffered read for transformation
-        if _bytes_read == 0 {
-            break;  // EOF
+            slice.truncate(_bytes_read);
+
+            for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
+                if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
+                    I = Some(idx);
+                } else {
+                    writer.write(&I.unwrap().to_le_bytes()).unwrap();
+
+                    let pair_added = internal_encoder.add_seq_to_dict((byte, I));
+
+                    if !pair_added && internal_encoder.clear_dict_on_overfill {
+                        internal_encoder.set_init_dict();
+                        writer.write(&CLEAR_SYMBOL.to_le_bytes()).unwrap();
+                    }
+
+                    I = Some(byte as u16);  // I -> idx of byte (bytes are filled sequentially)
+                }
+            }
         }
-
-        slice.truncate(_bytes_read);
-
-        for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
+    } else {
+        // Default behavior without transformation
+        for byte in reader.bytes().map(|b| b.unwrap()) {
             if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
                 I = Some(idx);
             } else {
@@ -246,11 +142,12 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
             }
         }
     }
+     
 
     writer.write(&I.unwrap().to_le_bytes()).unwrap();
 }
 
-pub fn decode_file(input_path: &str, output_path: &str) {
+pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
     let input_file = File::open(input_path).unwrap();
     let mut reader = BufReader::new(input_file);
 
@@ -279,7 +176,7 @@ pub fn decode_file(input_path: &str, output_path: &str) {
     let mut is_first = true;
     let mut old_I = 0;
 
-    let mut transormation_slice: Vec<u8> = Vec::new();
+    let mut _output_buffer: Vec<u8> = Vec::new();
 
     while let Some(_) = reader.read_exact(&mut idx_buff).ok() {
         // Read next idx
@@ -288,10 +185,14 @@ pub fn decode_file(input_path: &str, output_path: &str) {
         // First byte logic
         if is_first {
             is_first = false;
+
             // First byte should be always in the dict
             if let Some((fb, _)) = internal_decoder.dict.get(I as usize) {
-                // writer.write(&[*fb]).unwrap();   // Send it directly to output
-                transormation_slice.push(*fb);
+                if use_transform {
+                    _output_buffer.push(*fb);
+                } else {
+                    writer.write(&[*fb]).unwrap();   // Send it directly to output
+                }
             } else {
                 panic!("Corrupted input data: first index not in dictionary");
             }
@@ -309,8 +210,11 @@ pub fn decode_file(input_path: &str, output_path: &str) {
 
         // Normal processing
         if let Some(S) = internal_decoder.recover_seq_from_dict(I) {
-            // writer.write(&S).unwrap();
-            transormation_slice.extend_from_slice(&S);
+            if use_transform {
+                _output_buffer.extend_from_slice(&S);
+            } else {
+                writer.write(&S).unwrap();
+            }
 
             internal_decoder.add_seq_to_dict((S[0], Some(old_I)));
             old_I = I;
@@ -320,8 +224,8 @@ pub fn decode_file(input_path: &str, output_path: &str) {
             if let Some(old_S) = internal_decoder.recover_seq_from_dict(old_I) {
                 // writer.write(&old_S).unwrap();
                 // writer.write(&old_S[0..1]).unwrap();
-                transormation_slice.extend_from_slice(&old_S);
-                transormation_slice.push(old_S[0]);
+                _output_buffer.extend_from_slice(&old_S);
+                _output_buffer.push(old_S[0]);
 
                 // Add this sequence to the dict
                 internal_decoder.add_seq_to_dict((old_S[0], Some(old_I)));
@@ -330,17 +234,21 @@ pub fn decode_file(input_path: &str, output_path: &str) {
                 old_I = internal_decoder.get_last_dict_index();
             }
         }
-
-        // Flush transformation slice if it reached BWT_RESULT_SIZE
-        while transormation_slice.len() >= BWT_RESULT_SIZE {
-            let to_process = &transormation_slice.drain(0..BWT_RESULT_SIZE).collect();
-            let detransformed = perform_inverse_MTF_BWT(to_process);
-            writer.write(&detransformed).unwrap();
+        
+        if use_transform {
+            // Flush transformation slice if it reached BWT_RESULT_SIZE
+            while _output_buffer.len() >= BWT_RESULT_SIZE {
+                let to_process = &_output_buffer.drain(0..BWT_RESULT_SIZE).collect();
+                let detransformed = perform_inverse_MTF_BWT(to_process);
+                writer.write(&detransformed).unwrap();
+            }
         }
     }
 
-    // Flush remaining transformation
-    if transormation_slice.len() > 0 {
-        writer.write(&perform_inverse_MTF_BWT(&transormation_slice)).unwrap();
+    if use_transform {
+        // Flush remaining transformation
+        if _output_buffer.len() > 0 {
+            writer.write(&perform_inverse_MTF_BWT(&_output_buffer)).unwrap();
+        }
     }
 }

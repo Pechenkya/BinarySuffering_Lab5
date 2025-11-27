@@ -94,16 +94,20 @@ impl HuffmanEncoder {
         }
     }
 
-    pub fn encode(input: &str, output: &str) {
-        let file_to_endcode = &format!("{}.tmp", input); 
-        transform_file(input, file_to_endcode);
-
-        // let file_to_endcode = input;
+    pub fn encode(input: &str, output: &str, use_transform: bool) {
+        let file_to_endcode = if use_transform {
+            let tempfile = format!("{}.tmp", input); 
+            transform_file(input, &tempfile);
+            tempfile
+        }
+        else {
+            input.to_string()
+        };
 
         let mut internal_encoder = HuffmanEncoder {
             freq_t: [0; 256],
             root: None,
-            input_stream: BitStream::new(file_to_endcode, true),
+            input_stream: BitStream::new(&file_to_endcode, true),
             output_stream: BitStream::new(output, false),
             codes: [([0; 32], 0); 256],
         };
@@ -132,7 +136,9 @@ impl HuffmanEncoder {
 
         internal_encoder.output_stream.flush().unwrap();
 
-        remove_file(file_to_endcode).unwrap();
+        if use_transform {
+            remove_file(file_to_endcode).unwrap();
+        }
     }
 }
 
@@ -191,15 +197,18 @@ impl HuffmanDecoder {
         }
     }
 
-    pub fn decode(input: &str, output: &str) {
-        let transformed_output = &format!("{}.tmp", output);
-        // let transformed_output = output;
+    pub fn decode(input: &str, output: &str, use_transform: bool) {
+        let decoded_output = if use_transform {
+            format!("{}.tmp", output)
+        } else {
+            output.to_string()
+        };
 
         let mut internal_decoder = HuffmanDecoder {
             freq_t: [0; 256],
             root: None,
             input_stream: BitStream::new(input, true),
-            output_stream: BitStream::new(transformed_output, false),
+            output_stream: BitStream::new(&decoded_output, false),
             codes: [([0; 32], 0); 256],
         };
 
@@ -238,7 +247,10 @@ impl HuffmanDecoder {
 
         internal_decoder.output_stream.flush().unwrap();
 
-        inverse_transform_file(transformed_output, output);
-        remove_file(transformed_output).unwrap();
+        inverse_transform_file(&decoded_output, output);
+
+        if use_transform {
+            remove_file(decoded_output).unwrap();
+        }
     }
 }
