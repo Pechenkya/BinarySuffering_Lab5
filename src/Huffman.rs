@@ -94,10 +94,10 @@ impl HuffmanEncoder {
         }
     }
 
-    pub fn encode(input: &str, output: &str, use_transform: bool) {
-        let file_to_endcode = if use_transform {
+    pub fn encode(input: &str, output: &str, transform_id: u8) {
+        let file_to_endcode = if transform_id != 0 {
             let tempfile = format!("{}.tmp", input); 
-            transform_file(input, &tempfile);
+            transform_file(input, &tempfile, transform_id);
             tempfile
         }
         else {
@@ -136,7 +136,7 @@ impl HuffmanEncoder {
 
         internal_encoder.output_stream.flush().unwrap();
 
-        if use_transform {
+        if transform_id != 0 {
             remove_file(file_to_endcode).unwrap();
         }
     }
@@ -197,8 +197,8 @@ impl HuffmanDecoder {
         }
     }
 
-    pub fn decode(input: &str, output: &str, use_transform: bool) {
-        let decoded_output = if use_transform {
+    pub fn decode(input: &str, output: &str, transform_id: u8) {
+        let decoded_output = if transform_id != 0 {
             format!("{}.tmp", output)
         } else {
             output.to_string()
@@ -247,8 +247,8 @@ impl HuffmanDecoder {
 
         internal_decoder.output_stream.flush().unwrap();
 
-        if use_transform {
-            inverse_transform_file(&decoded_output, output);
+        if transform_id != 0 {
+            inverse_transform_file(&decoded_output, output, transform_id);
             remove_file(decoded_output).unwrap();
         }
     }

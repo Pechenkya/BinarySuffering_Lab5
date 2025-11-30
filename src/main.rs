@@ -7,18 +7,18 @@ mod Huffman;
 use std::{fs, result, time::{Duration, Instant}};
 use crate::TransformationMethods::{BWT, inverse_transform_file, transform_file};
 
-fn encode_file_with_timer(input_path: String, output_path: String, encoding_type: String, use_transform: bool) {
-    println!("Encoding file (Type: {encoding_type}; use transform: {use_transform}): {input_path}");
+fn encode_file_with_timer(input_path: String, output_path: String, encoding_type: String, transform_id: u8) {
+    println!("Encoding file (Type: {encoding_type}; transform id: {transform_id}): {input_path}");
     let start = Instant::now();
 
     let encoding_handle = if encoding_type == "LZW" {
         std::thread::spawn(move || {
-            LZWCoderEnhanced::encode_file(&input_path, &output_path, true, use_transform);
+            LZWCoderEnhanced::encode_file(&input_path, &output_path, true, transform_id);
             start.elapsed()
         })
     } else if encoding_type == "Huffman" {
         std::thread::spawn(move || {
-            Huffman::HuffmanEncoder::encode(&input_path, &output_path, use_transform);
+            Huffman::HuffmanEncoder::encode(&input_path, &output_path, transform_id);
             start.elapsed()
         })
     } else {
@@ -37,18 +37,18 @@ fn encode_file_with_timer(input_path: String, output_path: String, encoding_type
     println!("\rEncoding time: {:?}", encode_duration);
 }
 
-fn decode_file_with_timer(input_path: String, output_path: String, encoding_type: String, use_transform: bool) {
-    println!("Decoding file (Type: {encoding_type}; use transform: {use_transform}): {}", input_path);
+fn decode_file_with_timer(input_path: String, output_path: String, encoding_type: String, transform_id: u8) {
+    println!("Decoding file (Type: {encoding_type}; transform id: {transform_id}): {}", input_path);
     let start = Instant::now();
     
     let decoding_handle = if encoding_type == "LZW" {
         std::thread::spawn(move || {
-            LZWCoderEnhanced::decode_file(&input_path, &output_path, use_transform);
+            LZWCoderEnhanced::decode_file(&input_path, &output_path, transform_id);
             start.elapsed()
         })
     } else if encoding_type == "Huffman" {
         std::thread::spawn(move || {
-            Huffman::HuffmanDecoder::decode(&input_path, &output_path, use_transform);
+            Huffman::HuffmanDecoder::decode(&input_path, &output_path, transform_id);
             start.elapsed()
         })
     } else {
@@ -68,7 +68,7 @@ fn decode_file_with_timer(input_path: String, output_path: String, encoding_type
 }
 
 fn generate_args_and_paths(filenames: &Vec<&str>, base_input: &str, base_output_encoded: &str, base_output_decoded: &str, encoding_type: &str) 
-    -> Vec<(String, String, String, String, bool)> {
+    -> Vec<(String, String, String, String, u8)> {
     
     let mut results = Vec::new();
 
@@ -83,25 +83,49 @@ fn generate_args_and_paths(filenames: &Vec<&str>, base_input: &str, base_output_
         let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.huff");
         let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_huff.{f_type}");
 
-        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), false));
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), 0));
 
         let input_path = format!("{}/{}", base_input, filename);
-        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.hufft");
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.hufft_comb");
         let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_hufft.{f_type}");
 
-        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), true));
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), 1));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.hufft_bwt");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_hufft.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), 2));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.hufft_mft");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_hufft.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "Huffman".to_string(), 3));
 
         let input_path = format!("{}/{}", base_input, filename);
         let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzw");
         let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzw.{f_type}");
 
-        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), false));
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), 0));
 
         let input_path = format!("{}/{}", base_input, filename);
-        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzwt");
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzwt_comb");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzw.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), 1));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzwt_bwt");
+        let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzw.{f_type}");
+
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), 2));
+
+        let input_path = format!("{}/{}", base_input, filename);
+        let output_path_encoded = format!("{base_output_encoded}/{no_suff}/{filename}.lzwt_mft");
         let output_path_decoded = format!("{base_output_decoded}/{no_suff}/decoded_{no_suff}_lzwt.{f_type}");
 
-        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), true));
+        results.push((input_path, output_path_encoded, output_path_decoded, "LZW".to_string(), 3));
     }
 
     return results;
@@ -136,11 +160,11 @@ fn main() {
             use_transform,
         );
 
-        decode_file_with_timer(
-            output_path_encoded.clone(),
-            output_path_decoded.clone(),
-            encoding_type.clone(),
-            use_transform,
-        );
+        // decode_file_with_timer(
+        //     output_path_encoded.clone(),
+        //     output_path_decoded.clone(),
+        //     encoding_type.clone(),
+        //     use_transform,
+        // );
     }
 }

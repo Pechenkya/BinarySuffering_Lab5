@@ -69,7 +69,7 @@ impl LZWCoderEnhanced {
     }
 }
 
-pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: bool, use_transform: bool) {
+pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: bool, tranform_id: u8) {
     let input_file = File::open(input_path).unwrap();
     let mut reader = BufReader::new(input_file);
 
@@ -95,9 +95,9 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
 
     let mut I: Option<u16> = None;
 
-    if use_transform {
-        let mut slice: Vec<u8> = Vec::with_capacity(BWT_BLOCK_SIZE);
-        slice.resize(BWT_BLOCK_SIZE, 0);
+    if tranform_id != 0 {
+        let mut slice: Vec<u8> = Vec::with_capacity(TRANSFORM_BLOCK_SIZE);
+        slice.resize(TRANSFORM_BLOCK_SIZE, 0);
     
         while let Ok(_bytes_read) = reader.read(&mut slice) {   // Buffered read for transformation
             if _bytes_read == 0 {
@@ -106,7 +106,7 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
 
             slice.truncate(_bytes_read);
 
-            for &byte in perform_BWT_MTF(&slice.to_vec()).iter() {
+            for &byte in perform_transform(&slice.to_vec(), tranform_id).iter() {
                 if let Some(idx) = internal_encoder.find_seq_in_dict((byte, I)) {
                     I = Some(idx);
                 } else {
@@ -147,7 +147,7 @@ pub fn encode_file(input_path: &str, output_path: &str, clear_dict_on_overfill: 
     writer.write(&I.unwrap().to_le_bytes()).unwrap();
 }
 
-pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
+pub fn decode_file(input_path: &str, output_path: &str, tranform_id: u8) {
     let input_file = File::open(input_path).unwrap();
     let mut reader = BufReader::new(input_file);
 
@@ -178,6 +178,8 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
 
     let mut _output_buffer: Vec<u8> = Vec::new();
 
+    let transform_buff_size = if tranform_id != 0 {if tranform_id == 3 { TRANSFORM_BLOCK_SIZE } else { BWT_RESULT_SIZE } } else { 0 };
+
     while let Some(_) = reader.read_exact(&mut idx_buff).ok() {
         // Read next idx
         let I = u16::from_le_bytes(idx_buff.try_into().unwrap());
@@ -188,7 +190,7 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
 
             // First byte should be always in the dict
             if let Some((fb, _)) = internal_decoder.dict.get(I as usize) {
-                if use_transform {
+                if tranform_id != 0 {
                     _output_buffer.push(*fb);
                 } else {
                     writer.write(&[*fb]).unwrap();   // Send it directly to output
@@ -210,7 +212,7 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
 
         // Normal processing
         if let Some(S) = internal_decoder.recover_seq_from_dict(I) {
-            if use_transform {
+            if tranform_id != 0 {
                 _output_buffer.extend_from_slice(&S);
             } else {
                 writer.write(&S).unwrap();
@@ -222,7 +224,7 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
             // Special case (only case when I is not in dict - covering sequences)
             // S = old_S || old_S[0]
             if let Some(old_S) = internal_decoder.recover_seq_from_dict(old_I) {
-                if use_transform {
+                if tranform_id != 0 {
                     _output_buffer.extend_from_slice(&old_S);
                     _output_buffer.push(old_S[0]);
                 } else {
@@ -238,17 +240,17 @@ pub fn decode_file(input_path: &str, output_path: &str, use_transform: bool) {
             }
         }
         
-        if use_transform {
+        if tranform_id != 0 {
             // Flush transformation slice if it reached BWT_RESULT_SIZE
-            while _output_buffer.len() >= BWT_RESULT_SIZE {
-                let to_process = &_output_buffer.drain(0..BWT_RESULT_SIZE).collect();
-                let detransformed = perform_inverse_MTF_BWT(to_process);
+            while _output_buffer.len() >= transform_buff_size {
+                let to_process = &_output_buffer.drain(0..transform_buff_size).collect();
+                let detransformed = perform_inverse_transform(to_process, tranform_id);
                 writer.write(&detransformed).unwrap();
             }
         }
     }
 
-    if use_transform {
+    if tranform_id != 0 {
         // Flush remaining transformation
         if _output_buffer.len() > 0 {
             writer.write(&perform_inverse_MTF_BWT(&_output_buffer)).unwrap();

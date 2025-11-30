@@ -2,11 +2,11 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::{result, usize};
 
-// pub const BWT_BLOCK_SIZE: usize = 256;
-// pub const BWT_RESULT_SIZE: usize = BWT_BLOCK_SIZE + 1;
+// pub const TRANSFORM_BLOCK_SIZE: usize = 256;
+// pub const BWT_RESULT_SIZE: usize = TRANSFORM_BLOCK_SIZE + 1;
 
-pub const BWT_BLOCK_SIZE: usize = 4096;
-pub const BWT_RESULT_SIZE: usize = BWT_BLOCK_SIZE + 2;
+pub const TRANSFORM_BLOCK_SIZE: usize = 4096;
+pub const BWT_RESULT_SIZE: usize = TRANSFORM_BLOCK_SIZE + 2;
 
 
 fn generate_shifts(input_string: &Vec<u8>) -> Vec<Vec<u8>> {
@@ -21,9 +21,9 @@ fn generate_shifts(input_string: &Vec<u8>) -> Vec<Vec<u8>> {
 }
 
 pub fn BWT(input_string: &Vec<u8>) -> Vec<u8> {
-    // Limited to BWT_BLOCK_SIZE bytes
-    if input_string.len() > BWT_BLOCK_SIZE {
-        panic!("BWT can only handle inputs of size {} (passed: {})", BWT_BLOCK_SIZE, input_string.len());
+    // Limited to TRANSFORM_BLOCK_SIZE bytes
+    if input_string.len() > TRANSFORM_BLOCK_SIZE {
+        panic!("BWT can only handle inputs of size {} (passed: {})", TRANSFORM_BLOCK_SIZE, input_string.len());
     }
 
     let mut shifts: Vec<Vec<u8>> = generate_shifts(&input_string);
@@ -39,7 +39,7 @@ pub fn BWT(input_string: &Vec<u8>) -> Vec<u8> {
     }
 
     // Save the original index byte
-    if BWT_BLOCK_SIZE <= 256 {
+    if TRANSFORM_BLOCK_SIZE <= 256 {
         bwt_result.push(original_index as u8);
     } else {
         bwt_result.extend_from_slice(&original_index.to_le_bytes());
@@ -57,7 +57,7 @@ pub fn inverse_BWT(bwt_string: &Vec<u8>) -> Vec<u8> {
     let mut length = bwt_string.len() - 1;
     let mut pos = bwt_string[length] as usize; // Last byte is the original index
 
-    if BWT_BLOCK_SIZE > 256 {
+    if TRANSFORM_BLOCK_SIZE > 256 {
         length = length - 1;
         pos = u16::from_le_bytes(bwt_string[length..].try_into().unwrap()) as usize;
     }
@@ -120,13 +120,37 @@ pub fn perform_inverse_MTF_BWT(mtf_string: &Vec<u8>) -> Vec<u8> {
     inverse_bwt_result
 }
 
-pub fn transform_file(input_path: &str, output_path: &str) {
+pub fn perform_transform(input_string: &Vec<u8>, transform_id: u8) -> Vec<u8> {
+    if transform_id == 1 {    // Both BWT and MTF
+        return perform_BWT_MTF(input_string);
+    } else if transform_id == 2 {   // Only BWT
+        return BWT(input_string)
+    } else if transform_id == 3 {   // Only MTF
+        return MTF(input_string)
+    } else {
+        panic!("Unknown transform: {}", transform_id);
+    }
+}
+
+pub fn perform_inverse_transform(input_string: &Vec<u8>, transform_id: u8) -> Vec<u8> {
+    if transform_id == 1 {    // Both BWT and MTF
+        return perform_inverse_MTF_BWT(input_string);
+    } else if transform_id == 2 {   // Only BWT
+        return inverse_BWT(input_string)
+    } else if transform_id == 3 {   // Only MTF
+        return inverse_MTF(input_string)
+    } else {
+        panic!("Unknown inverse transform: {}", transform_id);
+    }
+}
+
+pub fn transform_file(input_path: &str, output_path: &str, transform_id: u8) {
     let mut input_file = BufReader::new(File::open(input_path).expect("Failed to open input file"));
     let mut output_file = BufWriter::new(File::create(output_path).expect("Failed to create output file"));
 
     let mut buffer = Vec::new();
-    let mut slice: Vec<u8> = Vec::with_capacity(BWT_BLOCK_SIZE);
-    slice.resize(BWT_BLOCK_SIZE, 0);
+    let mut slice: Vec<u8> = Vec::with_capacity(TRANSFORM_BLOCK_SIZE);
+    slice.resize(TRANSFORM_BLOCK_SIZE, 0);
 
     while let Ok(_bytes_read) = input_file.read(&mut slice) {   // Buffered read for transformation
         if _bytes_read == 0 {
@@ -135,9 +159,10 @@ pub fn transform_file(input_path: &str, output_path: &str) {
 
         buffer.extend_from_slice(&slice[.._bytes_read]);
 
-        if buffer.len() >= BWT_BLOCK_SIZE {
-            let block: Vec<u8> = buffer.drain(0..BWT_BLOCK_SIZE).collect();
-            let result: Vec<_> = perform_BWT_MTF(&block);
+        if buffer.len() >= TRANSFORM_BLOCK_SIZE {
+            let block: Vec<u8> = buffer.drain(0..TRANSFORM_BLOCK_SIZE).collect();
+            
+            let result: Vec<_> = perform_transform(&block, transform_id);
             output_file.write_all(&result).expect("Failed to write transformed data");
         }
     }
@@ -148,13 +173,20 @@ pub fn transform_file(input_path: &str, output_path: &str) {
     }
 }
 
-pub fn inverse_transform_file(input_path: &str, output_path: &str) {
+pub fn inverse_transform_file(input_path: &str, output_path: &str, transform_id: u8) {
     let mut input_file = BufReader::new(File::open(input_path).expect("Failed to open input file"));
     let mut output_file = BufWriter::new(File::create(output_path).expect("Failed to create output file"));
 
     let mut buffer = Vec::new();
-    let mut slice: Vec<u8> = Vec::with_capacity(BWT_RESULT_SIZE);
-    slice.resize(BWT_RESULT_SIZE, 0);
+    
+    let transform_block_size = if transform_id == 1 {
+        BWT_RESULT_SIZE
+    } else {
+        TRANSFORM_BLOCK_SIZE
+    };
+
+    let mut slice: Vec<u8> = Vec::with_capacity(transform_block_size);
+    slice.resize(transform_block_size, 0);
 
     while let Ok(_bytes_read) = input_file.read(&mut slice) {   // Buffered read for inverse transformation
         if _bytes_read == 0 {
@@ -163,9 +195,9 @@ pub fn inverse_transform_file(input_path: &str, output_path: &str) {
 
         buffer.extend_from_slice(&slice[.._bytes_read]);
 
-        while buffer.len() >= BWT_RESULT_SIZE {
-            let block: Vec<u8> = buffer.drain(0..BWT_RESULT_SIZE).collect();
-            let detransformed = perform_inverse_MTF_BWT(&block);
+        while buffer.len() >= transform_block_size {
+            let block: Vec<u8> = buffer.drain(0..transform_block_size).collect();
+            let detransformed = perform_inverse_transform(&block, transform_id);
             output_file.write_all(&detransformed).expect("Failed to write inversed data");
         }
     }
